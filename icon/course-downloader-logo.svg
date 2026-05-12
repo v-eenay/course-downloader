@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-labelledby="title desc">
+  <title id="title">Course Downloader Logo</title>
+  <desc id="desc">A rounded tile with a download arrow over a course card motif.</desc>
+  <defs>
+    <linearGradient id="bg" x1="28" y1="24" x2="224" y2="232" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#091109"/>
+      <stop offset="1" stop-color="#040704"/>
+    </linearGradient>
+  </defs>
+  <rect x="20" y="20" width="216" height="216" rx="52" fill="url(#bg)"/>
+  <path d="M84 74h56l18 18H76z" fill="#193019"/>
+  <rect x="62" y="88" width="132" height="106" rx="24" fill="#020502" stroke="#365236" stroke-width="4"/>
+  <path d="M128 102c-5.523 0-10 4.477-10 10v36H96c-6.467 0-9.701 7.817-5.126 12.392l37.126 37.126 37.126-37.126C169.701 155.817 166.467 148 160 148h-22v-36c0-5.523-4.477-10-10-10z" fill="#7bcf7b"/>
+  <circle cx="183" cy="73" r="15" fill="#7bcf7b" opacity="0.45"/>
+  <rect x="87" y="201" width="82" height="10" rx="5" fill="#365236" opacity="0.9"/>
+</svg>
