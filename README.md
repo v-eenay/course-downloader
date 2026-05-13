@@ -5,6 +5,18 @@ Built by **Binay Koirala** — [koiralavinay@gmail.com](mailto:koiralavinay@gmai
 
 ---
 
+## Download (No Python Required)
+
+> **Just want to use it?** Download the ready-to-run Windows executable — no installation, no Python needed.
+
+**[⬇ Download latest release](https://github.com/v-eenay/course-downloader/releases/latest)**
+
+1. Click the link above and download `CourseDownloader-vX.X.X-windows.exe`
+2. Double-click to run
+3. Log in to Coursera or Udemy in your browser first, paste the course URL, and click **Download**
+
+---
+
 ## Features
 
 - **Coursera** — full support: videos, subtitles, lecture notes, assignments, and supplementary materials
@@ -37,7 +49,7 @@ Per lecture, the downloader saves:
 - Dependencies listed in `requirements.txt`
 - A supported browser (Edge, Chrome, Firefox, Brave, Opera, Vivaldi, Zen) with an active logged-in session
 
-## Installation
+## Installation (from source)
 
 ```bash
 pip install -r requirements.txt

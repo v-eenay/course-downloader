@@ -1,0 +1,145 @@
+name: Build & Release
+
+on:
+  push:
+    tags:
+      - "v*"           # trigger on version tags: v3.1.0, v3.2.0, etc.
+  workflow_dispatch:   # allow manual trigger from GitHub UI
+
+permissions:
+  contents: write      # needed to create releases and upload assets
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"   # 3.11 is stable for PyInstaller + PyQt5
+
+      - name: Install dependencies
+        run: |
+          pip install --upgrade pip
+          pip install pyinstaller
+          pip install -r requirements.txt
+
+      - name: Convert SVG icon to ICO
+        run: |
+          python - <<'PYEOF'
+          import sys, io
+          from PIL import Image
+
+          # Use Qt's SVG renderer (already installed via PyQt5) to rasterise the SVG
+          try:
+              from PyQt5.QtWidgets import QApplication
+              from PyQt5.QtSvg import QSvgRenderer
+              from PyQt5.QtCore import Qt
+              from PyQt5.QtGui import QImage, QPainter
+
+              app = QApplication.instance() or QApplication(sys.argv)
+              renderer = QSvgRenderer("icon/course-downloader-logo.svg")
+              img_qt = QImage(256, 256, QImage.Format_ARGB32)
+              img_qt.fill(Qt.transparent)
+              painter = QPainter(img_qt)
+              renderer.render(painter)
+              painter.end()
+
+              buf = io.BytesIO()
+              img_qt.save_to_stream = None  # not needed
+              # Save via Pillow: convert QImage bytes to PIL
+              ptr = img_qt.bits()
+              ptr.setsize(img_qt.byteCount())
+              pil_img = Image.frombuffer("RGBA", (256, 256), bytes(ptr), "raw", "BGRA", 0, 1)
+          except Exception as e:
+              print(f"SVG render failed ({e}), using blank icon")
+              pil_img = Image.new("RGBA", (256, 256), (10, 50, 10, 255))
+
+          pil_img.save(
+              "icon/app.ico", format="ICO",
+              sizes=[(16,16),(32,32),(48,48),(64,64),(128,128),(256,256)]
+          )
+          print("icon/app.ico written")
+          PYEOF
+        shell: pwsh
+        continue-on-error: true
+
+      - name: Read version
+        id: version
+        run: |
+          $ver = python -c "from app_metadata import APP_VERSION; print(APP_VERSION)"
+          echo "VERSION=$ver" >> $env:GITHUB_OUTPUT
+        shell: pwsh
+
+      - name: Build exe with PyInstaller
+        run: |
+          $iconArg = ""
+          if (Test-Path "icon/app.ico") { $iconArg = "--icon=icon/app.ico" }
+
+          pyinstaller `
+            --onefile `
+            --windowed `
+            --name "CourseDownloader" `
+            $iconArg `
+            --add-data "icon;icon" `
+            --hidden-import "PyQt5.sip" `
+            --hidden-import "PyQt5.QtSvg" `
+            --hidden-import "PyQt5.QtXml" `
+            --hidden-import "browser_cookie3" `
+            --hidden-import "rookiepy" `
+            --hidden-import "keyring.backends.Windows" `
+            --collect-submodules "downloader_core" `
+            --collect-submodules "terminal_shell" `
+            maingui.py
+        shell: pwsh
+
+      - name: Rename exe with version
+        id: rename
+        run: |
+          $ver = "${{ steps.version.outputs.VERSION }}"
+          $src = "dist/CourseDownloader.exe"
+          $dst = "dist/CourseDownloader-v$ver-windows.exe"
+          Move-Item $src $dst
+          echo "ASSET=$dst" >> $env:GITHUB_OUTPUT
+          echo "ASSET_NAME=CourseDownloader-v$ver-windows.exe" >> $env:GITHUB_OUTPUT
+        shell: pwsh
+
+      - name: Determine release tag
+        id: tag
+        run: |
+          if ($env:GITHUB_REF -like "refs/tags/*") {
+            $tag = $env:GITHUB_REF -replace "refs/tags/", ""
+          } else {
+            $ver = "${{ steps.version.outputs.VERSION }}"
+            $tag = "v$ver"
+          }
+          echo "TAG=$tag" >> $env:GITHUB_OUTPUT
+        shell: pwsh
+
+      - name: Create or update GitHub Release and upload exe
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.tag.outputs.TAG }}
+          name: "Course Downloader ${{ steps.tag.outputs.TAG }}"
+          body: |
+            ## Download
+
+            **[CourseDownloader-${{ steps.tag.outputs.TAG }}-windows.exe]** — portable Windows executable, no installation needed.
+
+            ### What's inside
+            - Coursera: full download support (videos, notes, assignments)
+            - Udemy: full download support (videos, subtitles, articles, PDFs, code files)
+            - Automatic browser cookie authentication (Chrome, Firefox, Edge, Brave, Zen, and more)
+
+            ### How to use
+            1. Download the `.exe` below
+            2. Double-click to run — no Python or installation required
+            3. Log in to Coursera/Udemy in your browser first, then paste the course URL and click Download
+          draft: false
+          prerelease: false
+          files: ${{ steps.rename.outputs.ASSET }}
+          make_latest: true

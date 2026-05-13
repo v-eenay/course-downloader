@@ -16,6 +16,8 @@ data.bin
 build/
 dist/
 *.egg-info/
+*.spec
+icon/app.ico
 
 # Test and tooling caches
 .pytest_cache/
