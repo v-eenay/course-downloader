@@ -9,6 +9,7 @@ import logging
 import configargparse as argparse
 
 import general
+from providers import provider_choices
 
 __courseradlversion__ = '0.12.0b0'
 # from maingui import __version__
@@ -38,7 +39,7 @@ def parse_args(args=None):
     """
 
     parse_kwargs: dict[str, object] = {
-        "description":  'Download Coursera.org lecture material and resources.'
+        "description":  'Download supported course materials from the selected provider.'
     }
 
     conf_file_path = os.path.join(os.getcwd(), LOCAL_CONF_FILE_NAME)
@@ -48,12 +49,21 @@ def parse_args(args=None):
 
     # Basic options
     group_basic = parser.add_argument_group('Basic options')
+    available_providers = [provider_key for provider_key, _ in provider_choices()]
+
+    group_basic.add_argument(
+        '--provider',
+        dest='provider',
+        action='store',
+        default='coursera',
+        choices=available_providers,
+        help='content provider to use (default: coursera)')
 
     group_basic.add_argument(
         'class_names',
         action='store',
         nargs='*',
-        help='course, specialization, or professional certificate slug(s)/URL(s) (e.g. "ml-005" or a Coursera URL)')
+        help='target slug(s) or URL(s) for the selected provider')
 
     group_basic.add_argument(
         '-u',
@@ -485,7 +495,7 @@ def parse_args(args=None):
         logging.error('Cookies file not found: %s', args.cookies_file)
         sys.exit(1)
 
-    if not args.cookies_file and not args.cookies_cauth and not args.browser:
+    if args.provider == 'coursera' and not args.cookies_file and not args.cookies_cauth and not args.browser:
         try:
             args.username, args.password = get_credentials(
                 username=args.username, password=args.password)

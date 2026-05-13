@@ -4,11 +4,8 @@ from PyQt5.QtSvg import QSvgRenderer
 
 
 PHOSPHOR_STYLESHEET = """
-QMainWindow {
+QMainWindow, QWidget {
     background: #040704;
-}
-
-QWidget {
     color: #b8f7b8;
     font-family: "Lucida Console", "Courier New", monospace;
     font-size: 12px;
@@ -17,7 +14,7 @@ QWidget {
 QMenuBar {
     background: #0a0f0a;
     color: #b8f7b8;
-    border: 1px solid #365236;
+    border-bottom: 1px solid #365236;
 }
 
 QMenuBar::item {
@@ -45,6 +42,7 @@ QMenu::item:selected {
     color: #e8ffe8;
 }
 
+/* ── Dialogs / message boxes ─────────────────────────────────────────────── */
 QDialog,
 QMessageBox {
     background: #060b06;
@@ -70,6 +68,9 @@ QMessageBox QPlainTextEdit {
     border: 1px solid #365236;
 }
 
+/* QMessageBox buttons use QPushButton, covered below */
+
+/* ── Named frames ─────────────────────────────────────────────────────────── */
 QFrame#TopBar {
     background: #091109;
     border: 1px solid #3d633d;
@@ -81,39 +82,46 @@ QFrame#StatusStrip {
     border: 1px solid #365236;
 }
 
+/* ── Labels ───────────────────────────────────────────────────────────────── */
 QLabel#HeroTitle {
     font-size: 20px;
     font-weight: 700;
     color: #d9ffd9;
+    background: transparent;
 }
 
 QLabel#HeroSubtitle {
     font-size: 11px;
     color: #82c882;
+    background: transparent;
 }
 
 QLabel#SectionTitle {
     font-size: 13px;
     font-weight: 700;
     color: #d9ffd9;
+    background: transparent;
 }
 
 QLabel#SectionHint,
 QLabel#StatusBarText,
 QLabel#LayoutMode {
     color: #82c882;
+    background: transparent;
 }
 
 QLabel#InlineLabel {
     font-size: 11px;
     font-weight: 700;
     color: #98d898;
+    background: transparent;
 }
 
 QLabel#StatusText {
     font-size: 12px;
     color: #d9ffd9;
     font-weight: 600;
+    background: transparent;
 }
 
 QLabel#StateBadge[state="idle"] {
@@ -148,6 +156,7 @@ QLabel#StateBadge[state="error"] {
     font-weight: 700;
 }
 
+/* ── Input widgets ────────────────────────────────────────────────────────── */
 QLineEdit,
 QComboBox,
 QPlainTextEdit {
@@ -205,6 +214,7 @@ QComboBox::down-arrow {
     height: 10px;
 }
 
+/* ── Buttons ──────────────────────────────────────────────────────────────── */
 QPushButton {
     padding: 6px 16px;
     font-weight: 700;
@@ -212,6 +222,8 @@ QPushButton {
     color: #c6ffc6;
     border: 1px solid #365236;
     min-height: 28px;
+    font-family: "Lucida Console", "Courier New", monospace;
+    font-size: 12px;
 }
 
 QPushButton:hover {
@@ -241,8 +253,10 @@ QPushButton#GhostButton {
     min-width: 90px;
 }
 
+/* ── Checkbox ─────────────────────────────────────────────────────────────── */
 QCheckBox {
     spacing: 8px;
+    background: transparent;
 }
 
 QCheckBox::indicator {
@@ -257,20 +271,26 @@ QCheckBox::indicator:checked {
     border: 1px solid #7bcf7b;
 }
 
+/* ── Group box ────────────────────────────────────────────────────────────── */
 QGroupBox {
     border: 1px solid #365236;
     margin-top: 10px;
     padding: 12px;
     background: #060b06;
     font-weight: 700;
-}
-
-QGroupBox::title {
-    left: 10px;
-    padding: 0 4px;
     color: #b8f7b8;
 }
 
+QGroupBox::title {
+    subcontrol-origin: margin;
+    subcontrol-position: top left;
+    left: 10px;
+    padding: 0 4px;
+    color: #b8f7b8;
+    background: #060b06;
+}
+
+/* ── Progress bar ─────────────────────────────────────────────────────────── */
 QProgressBar {
     border: 1px solid #365236;
     background: #020502;
@@ -284,20 +304,104 @@ QProgressBar::chunk {
     background: #7bcf7b;
 }
 
+/* ── Log / text edit ──────────────────────────────────────────────────────── */
 QPlainTextEdit {
     background: #020502;
     color: #d9ffd9;
     border: 1px solid #365236;
-    font-family: "Consolas";
+    font-family: "Consolas", "Courier New", monospace;
 }
 
+/* ── Scroll area ──────────────────────────────────────────────────────────── */
 QScrollArea {
     border: none;
     background: transparent;
 }
 
+QScrollArea > QWidget > QWidget {
+    background: transparent;
+}
+
+QAbstractScrollArea {
+    background: #040704;
+}
+
+QAbstractScrollArea > QWidget {
+    background: #040704;
+}
+
+/* ── Scrollbars ───────────────────────────────────────────────────────────── */
+QScrollBar:vertical {
+    background: #040704;
+    width: 10px;
+    margin: 0;
+    border: none;
+}
+
+QScrollBar::handle:vertical {
+    background: #2a4a2a;
+    min-height: 24px;
+    border-radius: 4px;
+}
+
+QScrollBar::handle:vertical:hover {
+    background: #3d663d;
+}
+
+QScrollBar::add-line:vertical,
+QScrollBar::sub-line:vertical,
+QScrollBar::add-page:vertical,
+QScrollBar::sub-page:vertical {
+    background: none;
+    height: 0;
+}
+
+QScrollBar:horizontal {
+    background: #040704;
+    height: 10px;
+    margin: 0;
+    border: none;
+}
+
+QScrollBar::handle:horizontal {
+    background: #2a4a2a;
+    min-width: 24px;
+    border-radius: 4px;
+}
+
+QScrollBar::handle:horizontal:hover {
+    background: #3d663d;
+}
+
+QScrollBar::add-line:horizontal,
+QScrollBar::sub-line:horizontal,
+QScrollBar::add-page:horizontal,
+QScrollBar::sub-page:horizontal {
+    background: none;
+    width: 0;
+}
+
+/* ── Splitter ─────────────────────────────────────────────────────────────── */
+QSplitter {
+    background: #040704;
+}
+
 QSplitter::handle {
     background: #193019;
+}
+
+QSplitter::handle:hover {
+    background: #2a4a2a;
+}
+
+/* ── Tooltip ──────────────────────────────────────────────────────────────── */
+QToolTip {
+    background: #0a0f0a;
+    color: #d9ffd9;
+    border: 1px solid #365236;
+    padding: 4px 8px;
+    font-family: "Lucida Console", "Courier New", monospace;
+    font-size: 11px;
 }
 """
 

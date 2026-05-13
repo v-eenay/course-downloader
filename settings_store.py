@@ -1,3 +1,4 @@
+import copy
 import os
 import pickle
 from os import path
@@ -11,6 +12,10 @@ class SettingsStore:
     def _default_payload(self):
         return {
             'browser': 'edge',
+            'provider': 'coursera',
+            'udemy_quality_policy': 'exact_or_lower',
+            'udemy_include_captions': False,
+            'udemy_include_supplemental': False,
             'argdict': {
                 'ca': '',
                 'classname': '',
@@ -20,6 +25,19 @@ class SettingsStore:
             },
         }
 
+    def _merge_defaults(self, payload, defaults):
+        merged = copy.deepcopy(defaults)
+        if not isinstance(payload, dict):
+            return merged
+
+        for key, value in payload.items():
+            if key in merged and isinstance(merged[key], dict) and isinstance(value, dict):
+                merged[key] = self._merge_defaults(value, merged[key])
+            else:
+                merged[key] = value
+
+        return merged
+
     def _read_disk(self):
         if not os.path.exists(self.filename):
             payload = self._default_payload()
@@ -27,7 +45,12 @@ class SettingsStore:
             return payload
 
         with open(self.filename, 'rb') as file_handle:
-            return pickle.load(file_handle)
+            payload = pickle.load(file_handle)
+
+        merged_payload = self._merge_defaults(payload, self._default_payload())
+        if merged_payload != payload:
+            self._write_disk(merged_payload)
+        return merged_payload
 
     def _write_disk(self, payload):
         with open(self.filename, 'wb') as file_handle:
@@ -67,7 +90,7 @@ class SettingsStore:
         self._write_disk(self._payload)
 
     def snapshot(self):
-        return dict(self._payload)
+        return copy.deepcopy(self._payload)
 
     def get_full_db(self):
         return self.snapshot()

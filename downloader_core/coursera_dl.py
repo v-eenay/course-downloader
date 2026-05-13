@@ -71,6 +71,7 @@ from general import loadcauth_result
 from network import get_page, get_page_and_url
 from commandline import parse_args
 from extractors import CourseraExtractor
+from providers import get_provider
 
 
 # URL containing information about outdated modules
@@ -237,7 +238,31 @@ def main_f(cmd):
     # ==================
     args = parse_args(cmd)
     # ===================
+    provider = get_provider(getattr(args, 'provider', 'coursera'))
     logging.info('>> COURSE DOWNLOADER\n')
+    logging.info('Provider: %s', provider.display_name)
+
+    if args.class_names:
+        for target in args.class_names:
+            validation = provider.validate_target(target, mode_selected=getattr(args, 'specialization', False))
+            if not validation.ok:
+                raise RuntimeError(validation.error or f'Invalid {provider.display_name} target.')
+
+    provider_notice = provider.get_blocking_notice()
+    if provider_notice:
+        raise RuntimeError(provider_notice)
+
+    # Non-Coursera providers own their entire download lifecycle via run()
+    if provider.key != 'coursera':
+        for target in (args.class_names or []):
+            result = provider.validate_target(
+                target,
+                mode_selected=getattr(args, 'specialization', False),
+            )
+            if result.ok:
+                provider.run(result.parsed_target, vars(args))
+        return
+
     completed_classes = []
     classes_with_errors = []
 
