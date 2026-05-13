@@ -27,17 +27,31 @@ _PAGE_ID_PATTERNS = [
 ]
 
 
-def make_session(access_token: str, cookies: dict | None = None) -> requests.Session:
-    """Build an authenticated requests session."""
+def make_session(
+    access_token: str,
+    cookies: dict | None = None,
+    org_domain: str = "udemy.com",
+) -> requests.Session:
+    """Build an authenticated requests session.
+
+    *org_domain* should be the host the user is logged in to, e.g.
+    ``ingnepal.udemy.com`` for Udemy Business or ``udemy.com`` for personal
+    accounts.  Cookies are registered for that domain so the session's cookie
+    jar matches what the Udemy API expects.
+    """
     session = requests.Session()
     if cookies:
         for name, value in cookies.items():
-            session.cookies.set(name, value, domain="udemy.com")
+            session.cookies.set(name, value, domain=org_domain)
+            # Also register on the root domain so API calls to www.udemy.com work.
+            if org_domain != "udemy.com":
+                session.cookies.set(name, value, domain="udemy.com")
+    referer_host = org_domain if "." in org_domain else "www.udemy.com"
     session.headers.update(
         {
             "Authorization": f"Bearer {access_token}",
             "X-Requested-With": "XMLHttpRequest",
-            "Referer": "https://www.udemy.com/",
+            "Referer": f"https://{referer_host}/",
             "Accept": "application/json, text/plain, */*",
         }
     )
@@ -127,7 +141,7 @@ def _try_html_page(session: requests.Session, slug: str):
     return None
 
 
-def _try_subscribed_exact(session: requests.Session, slug: str):
+def _try_subscribed_exact(session: requests.Session, slug: str, api_base: str = UDEMY_API_BASE):
     """Paginate through ALL enrolled courses and match on published_title == slug.
 
     The Udemy API's url_component filter is fuzzy/unreliable, so we ignore it
@@ -139,7 +153,7 @@ def _try_subscribed_exact(session: requests.Session, slug: str):
     while True:
         try:
             resp = session.get(
-                f"{UDEMY_API_BASE}/users/me/subscribed-courses/",
+                f"{api_base}/users/me/subscribed-courses/",
                 params={
                     "page": page,
                     "page_size": page_size,
@@ -163,11 +177,11 @@ def _try_subscribed_exact(session: requests.Session, slug: str):
     return None
 
 
-def _try_courses_api_exact(session: requests.Session, slug: str):
+def _try_courses_api_exact(session: requests.Session, slug: str, api_base: str = UDEMY_API_BASE):
     """Fallback: use the public courses API and verify the URL slug matches exactly."""
     try:
         resp = session.get(
-            f"{UDEMY_API_BASE}/courses/",
+            f"{api_base}/courses/",
             params={"url_component": slug, "fields[course]": "id,title,url", "page_size": 20},
             timeout=20,
         )
@@ -180,7 +194,9 @@ def _try_courses_api_exact(session: requests.Session, slug: str):
     return None
 
 
-def get_course_by_slug(session: requests.Session, slug: str) -> tuple:
+def get_course_by_slug(
+    session: requests.Session, slug: str, api_base: str = UDEMY_API_BASE
+) -> tuple:
     """Return (course_id, course_title) for the given course slug.
 
     Tries in order:
@@ -192,8 +208,8 @@ def get_course_by_slug(session: requests.Session, slug: str) -> tuple:
     Raises ValueError with a clear message if all approaches fail.
     """
     result = (
-        _try_subscribed_exact(session, slug)
-        or _try_courses_api_exact(session, slug)
+        _try_subscribed_exact(session, slug, api_base)
+        or _try_courses_api_exact(session, slug, api_base)
         or _try_html_page(session, slug)
     )
     if result:
@@ -206,10 +222,12 @@ def get_course_by_slug(session: requests.Session, slug: str) -> tuple:
     )
 
 
-def get_curriculum(session: requests.Session, course_id: int) -> list:
+def get_curriculum(
+    session: requests.Session, course_id: int, api_base: str = UDEMY_API_BASE
+) -> list:
     """Return all curriculum items for *course_id* (chapters, lectures, quizzes)."""
     url = (
-        f"{UDEMY_API_BASE}/courses/{course_id}/subscriber-curriculum-items/"
+        f"{api_base}/courses/{course_id}/subscriber-curriculum-items/"
         f"?page_size=1400&{_CURRICULUM_FIELDS}"
     )
     resp = session.get(url, timeout=60)

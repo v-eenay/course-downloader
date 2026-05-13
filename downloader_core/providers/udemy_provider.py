@@ -3,11 +3,32 @@ from __future__ import annotations
 import logging
 import os
 import re
+from urllib.parse import urlparse
 
 import requests
 
 from .base import CourseProvider, ProviderUiSpec, ValidationResult
 from .udemy_parser import parse_udemy_target
+
+
+def _org_host_from_url(raw_url: str | None) -> str:
+    """Return the Udemy host for the given URL.
+
+    For personal accounts this is ``www.udemy.com``.
+    For Udemy Business accounts it will be something like ``ingnepal.udemy.com``.
+    Falls back to ``www.udemy.com`` if the URL cannot be parsed.
+    """
+    if not raw_url:
+        return "www.udemy.com"
+    try:
+        host = urlparse(raw_url).netloc.lower().lstrip("www.")
+        # Accept any *.udemy.com host
+        if host == "udemy.com" or host.endswith(".udemy.com"):
+            parsed_host = urlparse(raw_url).netloc.lower()
+            return parsed_host
+    except Exception:
+        pass
+    return "www.udemy.com"
 
 _UNSAFE_RE = re.compile(r'[\\/:*?"<>|]')
 
@@ -57,10 +78,10 @@ class UdemyProvider(CourseProvider):
     display_name = "Udemy"
     ui_spec = ProviderUiSpec(
         target_label="Course URL",
-        target_placeholder="https://www.udemy.com/course/example/",
+        target_placeholder="https://www.udemy.com/course/example/  or  https://org.udemy.com/course/example/",
         target_help=(
-            "Paste a Udemy course URL. You must be enrolled in the course and "
-            "logged in to a supported browser (Edge, Chrome, Firefox, etc.)."
+            "Paste a Udemy course URL. Works with personal and Udemy Business accounts "
+            "(e.g. ingnepal.udemy.com). You must be enrolled and logged in to a supported browser."
         ),
         browser_help="Sign in to Udemy first. Supported browsers: {browsers}.",
         mode_toggle_text="Course",
@@ -80,9 +101,15 @@ class UdemyProvider(CourseProvider):
         resolution = args_dict.get("video_resolution") or "best"
         slug = parsed_target.slug_or_id
 
+        # Detect Udemy Business org subdomain (e.g. ingnepal.udemy.com)
+        raw_url = parsed_target.raw_value if parsed_target.is_url else None
+        org_host = _org_host_from_url(raw_url)          # e.g. "ingnepal.udemy.com"
+        org_domain = org_host.lstrip("www.")            # e.g. "ingnepal.udemy.com" / "udemy.com"
+        api_base = f"https://{org_host}/api-2.0"
+
         # ── Authentication ────────────────────────────────────────────────
         logging.info("Authenticating with Udemy via %s cookies…", browser)
-        token, cookies, error, source_browser = load_udemy_auth(browser)
+        token, cookies, error, source_browser = load_udemy_auth(browser, org_domain=org_domain)
         if not token:
             raise RuntimeError(
                 f"Udemy authentication failed: {error}\n"
@@ -95,16 +122,16 @@ class UdemyProvider(CourseProvider):
                 browser,
             )
 
-        session = make_session(token, cookies)
+        session = make_session(token, cookies, org_domain=org_domain)
 
         # ── Course metadata ───────────────────────────────────────────────
         logging.info("Looking up course: %s", slug)
-        course_id, course_title = get_course_by_slug(session, slug)
+        course_id, course_title = get_course_by_slug(session, slug, api_base=api_base)
         logging.info("Downloading class: %s", course_title)
 
         # ── Curriculum ────────────────────────────────────────────────────
         logging.info("Fetching curriculum…")
-        results = get_curriculum(session, course_id)
+        results = get_curriculum(session, course_id, api_base=api_base)
         sections = map_curriculum(results, resolution)
 
         total_items = sum(len(s["lectures"]) for s in sections)
