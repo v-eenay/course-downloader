@@ -77,24 +77,26 @@ jobs:
 
       - name: Build exe with PyInstaller
         run: |
-          $iconArg = ""
-          if (Test-Path "icon/app.ico") { $iconArg = "--icon=icon/app.ico" }
-
-          pyinstaller `
-            --onefile `
-            --windowed `
-            --name "CourseDownloader" `
-            $iconArg `
-            --add-data "icon;icon" `
-            --hidden-import "PyQt5.sip" `
-            --hidden-import "PyQt5.QtSvg" `
-            --hidden-import "PyQt5.QtXml" `
-            --hidden-import "browser_cookie3" `
-            --hidden-import "rookiepy" `
-            --hidden-import "keyring.backends.Windows" `
-            --collect-submodules "downloader_core" `
-            --collect-submodules "terminal_shell" `
-            maingui.py
+          # Build argument list as an array to avoid empty-string arg issues
+          $pyiArgs = @(
+            "--onefile",
+            "--windowed",
+            "--name", "CourseDownloader",
+            "--add-data", "icon:icon",
+            "--hidden-import", "PyQt5.sip",
+            "--hidden-import", "PyQt5.QtSvg",
+            "--hidden-import", "PyQt5.QtXml",
+            "--hidden-import", "browser_cookie3",
+            "--hidden-import", "rookiepy",
+            "--hidden-import", "keyring.backends.Windows",
+            "--collect-submodules", "downloader_core",
+            "--collect-submodules", "terminal_shell",
+            "maingui.py"
+          )
+          if (Test-Path "icon/app.ico") {
+            $pyiArgs = @("--icon", "icon/app.ico") + $pyiArgs
+          }
+          & pyinstaller @pyiArgs
         shell: pwsh
 
       - name: Rename exe with version
