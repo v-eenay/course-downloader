@@ -409,11 +409,6 @@ class ConsoleDashboard(QMainWindow):
             if source_index != -1:
                 self.browser_select.setCurrentIndex(source_index)
             browser = source_browser
-            self._show_message_box(
-                "Authentication Source",
-                f"Could not read Coursera cookies from the selected browser.\n\nUsing the logged-in Coursera session from {general.BROWSER_DISPLAY_NAMES[source_browser]} instead.",
-                QMessageBox.Information,
-            )
 
         self.preference_store.update('argdict.ca', cauth)
         self.preference_store.update('browser', browser)

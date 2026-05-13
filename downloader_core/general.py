@@ -70,6 +70,10 @@ _SPECIALIZATION_URL_PATTERN = re.compile(
     r'coursera\.org/(?:[^/?#]+/)*specializations/([^/?#]+)',
     re.IGNORECASE
 )
+_PROGRAMS_SPECIALIZATION_URL_PATTERN = re.compile(
+    r'coursera\.org/programs/[^/?#]+/specializations/([^/?#]+)',
+    re.IGNORECASE
+)
 _PROFESSIONAL_CERTIFICATE_URL_PATTERN = re.compile(
     r'coursera\.org/(?:[^/?#]+/)*professional-certificates?/([^/?#]+)',
     re.IGNORECASE
@@ -153,6 +157,10 @@ def parse_coursera_target(target: str, default_kind='course'):
     specialization_match = _SPECIALIZATION_URL_PATTERN.search(lowered_target)
     if specialization_match:
         return CourseraTarget('specialization', specialization_match.group(1), True)
+
+    programs_specialization_match = _PROGRAMS_SPECIALIZATION_URL_PATTERN.search(lowered_target)
+    if programs_specialization_match:
+        return CourseraTarget('specialization', programs_specialization_match.group(1), True)
 
     professional_certificate_match = _PROFESSIONAL_CERTIFICATE_URL_PATTERN.search(lowered_target)
     if professional_certificate_match:
