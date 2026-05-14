@@ -244,7 +244,7 @@ class ConsoleDashboard(QMainWindow):
         udemy_org_layout = QVBoxLayout(udemy_org_box)
         udemy_org_layout.setSpacing(6)
         self.udemy_org_input = QLineEdit(self.preference_store.read('udemy_org') or '')
-        self.udemy_org_input.setPlaceholderText("e.g. ingnepal  (leave blank for personal accounts)")
+        self.udemy_org_input.setPlaceholderText("e.g. yourorg  (leave blank for personal accounts)")
         udemy_org_layout.addWidget(self.udemy_org_input)
         udemy_org_hint = QLabel(
             "If your Udemy account is on a business portal (yourorg.udemy.com), "

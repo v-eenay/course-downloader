@@ -15,7 +15,7 @@ def _org_host_from_url(raw_url: str | None) -> str:
     """Return the Udemy host for the given URL.
 
     For personal accounts this is ``www.udemy.com``.
-    For Udemy Business accounts it will be something like ``ingnepal.udemy.com``.
+    For Udemy Business accounts it will be something like ``yourorg.udemy.com``.
     Falls back to ``www.udemy.com`` if the URL cannot be parsed.
     """
     if not raw_url:
@@ -81,7 +81,7 @@ class UdemyProvider(CourseProvider):
         target_placeholder="https://www.udemy.com/course/example/  or  https://org.udemy.com/course/example/",
         target_help=(
             "Paste a Udemy course URL. Works with personal and Udemy Business accounts "
-            "(e.g. ingnepal.udemy.com). You must be enrolled and logged in to a supported browser."
+            "(e.g. yourorg.udemy.com). You must be enrolled and logged in to a supported browser."
         ),
         browser_help="Sign in to Udemy first. Supported browsers: {browsers}.",
         mode_toggle_text="Course",
@@ -106,15 +106,15 @@ class UdemyProvider(CourseProvider):
         # 3) default udemy.com
         explicit_org = (args_dict.get("udemy_org") or "").strip().lower()
         if explicit_org:
-            # Normalise: allow "ingnepal" or "ingnepal.udemy.com"
+            # Normalise: allow "yourorg" or "yourorg.udemy.com"
             if not explicit_org.endswith(".udemy.com") and explicit_org != "udemy.com":
                 explicit_org = f"{explicit_org}.udemy.com"
             org_host = explicit_org
         else:
             raw_url = parsed_target.raw_value if parsed_target.is_url else None
-            org_host = _org_host_from_url(raw_url)   # e.g. "ingnepal.udemy.com"
+            org_host = _org_host_from_url(raw_url)   # e.g. "yourorg.udemy.com"
 
-        org_domain = org_host.lstrip("www.")          # e.g. "ingnepal.udemy.com"
+        org_domain = org_host.lstrip("www.")          # e.g. "yourorg.udemy.com"
         api_base = f"https://{org_host}/api-2.0"
 
         # ── Authentication ────────────────────────────────────────────────

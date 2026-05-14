@@ -35,7 +35,7 @@ def make_session(
     """Build an authenticated requests session.
 
     *org_domain* should be the host the user is logged in to, e.g.
-    ``ingnepal.udemy.com`` for Udemy Business or ``udemy.com`` for personal
+    ``yourorg.udemy.com`` for Udemy Business or ``udemy.com`` for personal
     accounts.  Cookies are registered for that domain so the session's cookie
     jar matches what the Udemy API expects.
     """
@@ -230,7 +230,7 @@ def get_course_by_slug(
         f"Could not resolve course ID for: {slug!r}.\n"
         "Make sure you are enrolled in the course and logged in to Udemy in your browser.\n"
         "For Udemy Business accounts: paste the full business URL "
-        "(e.g. https://ingnepal.udemy.com/course/…) or enter your org name "
+        "(e.g. https://yourorg.udemy.com/course/…) or enter your org name "
         "in the 'Udemy Business Org' field."
     )
 

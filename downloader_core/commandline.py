@@ -380,7 +380,7 @@ def parse_args(args=None):
         default=None,
         metavar="ORG",
         help=(
-            'Udemy Business org subdomain (e.g. "ingnepal" or "ingnepal.udemy.com"). '
+            'Udemy Business org subdomain (e.g. "acme" or "acme.udemy.com"). '
             'Use this when your Udemy account is on a business portal. '
             'If you paste the full business URL the app detects this automatically.'
         ))
