@@ -1,14 +1,20 @@
 from __future__ import annotations
 
+import logging
+
 import general
 
 UDEMY_BASE_DOMAIN = "udemy.com"
 
-# Domain variants tried when searching for Udemy cookies.
-# browser_cookie3 / rookiepy filter cookies via SQL LIKE '%domain%', so
-# "udemy.com" already matches both udemy.com and *.udemy.com subdomains.
-# The extra variants below are belt-and-suspenders for edge cases.
-_UDEMY_COOKIE_DOMAIN_VARIANTS = ["udemy.com", ".udemy.com", "udemy"]
+# Domain strings passed to the cookie backends.
+# browser_cookie3 builds SQL: WHERE host LIKE '%<domain>%'
+# so "udemy.com" already matches ingnepal.udemy.com, www.udemy.com, etc.
+# We still try several variants because rookiepy may filter more strictly.
+_UDEMY_COOKIE_SEARCH_DOMAINS = [
+    "udemy.com",    # catches all *.udemy.com via LIKE in browser_cookie3
+    ".udemy.com",   # explicit suffix for rookiepy-style matching
+    "udemy",        # broadest catch-all – anything with "udemy" in the host
+]
 
 
 def _cookies_to_dict(cookies) -> dict[str, str]:
@@ -25,49 +31,55 @@ def _cookies_to_dict(cookies) -> dict[str, str]:
     return result
 
 
-def _try_browser(browser: str, domain: str) -> tuple[str, dict[str, str], str | None]:
-    """Return (access_token, all_cookies_dict, error) for a single browser + domain."""
-    try:
-        raw = general.load_browser_cookies(domain, browser)
-        cookie_dict = _cookies_to_dict(raw)
-        token = cookie_dict.get("access_token", "")
-        if token:
-            return token, cookie_dict, None
-        return "", cookie_dict, f"No access_token cookie found for {domain} in {browser}."
-    except Exception as exc:
-        return "", {}, str(exc)
+def _load_all_udemy_cookies(
+    browser: str, org_domain: str = UDEMY_BASE_DOMAIN
+) -> tuple[dict[str, str], list[str]]:
+    """Load and merge cookies from every relevant Udemy domain for *browser*.
 
+    We search multiple domain strings and merge the results so that cookies
+    stored under any Udemy subdomain (e.g. ingnepal.udemy.com) are captured.
+    We do NOT stop early when one domain returns cookies but no access_token —
+    that was a previous bug that caused Udemy Business logins to fail because
+    www.udemy.com tracking cookies satisfied the "got cookies" check.
 
-def _try_browser_exhaustive(browser: str, org_domain: str) -> tuple[str, dict[str, str], str | None]:
-    """Try every useful domain variant for *browser* to find an access_token.
-
-    Searches in order:
-      1. The explicit org_domain (e.g. ``ingnepal.udemy.com`` for business accounts)
-      2. Standard ``udemy.com`` – already matches subdomains via LIKE in most backends
-      3. ``.udemy.com`` and ``udemy`` – wider nets for edge cases
-
-    Returns (token, cookies_dict, error).
+    Returns (merged_cookie_dict, list_of_backend_errors).
     """
-    # Deduplicate while preserving order
-    seen: set[str] = set()
+    # Build deduplicated domain list: org-specific variants first (if known),
+    # then standard catch-all patterns.
     domains: list[str] = []
-    for d in [org_domain, *_UDEMY_COOKIE_DOMAIN_VARIANTS]:
-        if d not in seen:
+    seen: set[str] = set()
+
+    def _add(d: str) -> None:
+        if d and d not in seen:
             seen.add(d)
             domains.append(d)
 
-    last_error: str | None = None
-    for domain in domains:
-        token, cdict, error = _try_browser(browser, domain)
-        if token:
-            return token, cdict, None
-        # If we got cookies back (even without a token), the backend is working
-        # and the token simply isn't there – no point trying more domains.
-        if cdict:
-            return "", {}, error
-        last_error = error
+    # Explicit org subdomain (e.g. "ingnepal.udemy.com")
+    if org_domain and org_domain not in ("udemy.com", "www.udemy.com"):
+        _add(org_domain)
+        # Also add with leading dot for rookiepy suffix matching
+        _add(org_domain if org_domain.startswith(".") else "." + org_domain)
 
-    return "", {}, last_error or f"Could not load Udemy cookies from {browser}."
+    for d in _UDEMY_COOKIE_SEARCH_DOMAINS:
+        _add(d)
+
+    merged: dict[str, str] = {}
+    errors: list[str] = []
+
+    for domain in domains:
+        try:
+            raw = general.load_browser_cookies(domain, browser)
+            batch = _cookies_to_dict(raw)
+            if batch:
+                merged.update(batch)
+                logging.debug(
+                    "Udemy cookies from %s via %s: %d cookie(s) (has access_token=%s)",
+                    domain, browser, len(batch), "access_token" in batch,
+                )
+        except Exception as exc:
+            errors.append(f"{domain}: {exc}")
+
+    return merged, errors
 
 
 def load_udemy_auth(
@@ -75,24 +87,32 @@ def load_udemy_auth(
 ) -> tuple[str, dict[str, str], str | None, str]:
     """Return (access_token, all_cookies_dict, error, source_browser).
 
-    Only the *browser* specified by the caller is tried.  Cross-browser
-    fallback is intentionally removed: silently switching to a different
-    browser's account causes confusing "wrong course / not enrolled" errors,
-    especially when the user has both a personal and a business Udemy account
-    in different browsers.
-
-    If no token is found the error message explains what to do.
+    Searches the specified *browser* across all Udemy domain variants and
+    returns as soon as an access_token is found.  No cross-browser fallback —
+    that previously caused wrong-account errors for users with both personal
+    and business Udemy accounts in different browsers.
     """
-    token, cdict, error = _try_browser_exhaustive(browser, org_domain)
-    if token:
-        return token, cdict, None, browser
+    logging.info("Loading Udemy cookies from %s (org domain: %s)…", browser, org_domain)
+    merged, errors = _load_all_udemy_cookies(browser, org_domain)
 
-    friendly = (
-        f"No Udemy access_token found in {browser}.\n"
-        "• Make sure you are logged in to Udemy in that browser and the browser is closed "
-        "(so the cookie database is not locked).\n"
-        "• If you use a Udemy Business account (e.g. yourorg.udemy.com), paste the full "
-        "business course URL — the app will detect the org automatically — or enter your "
-        "org subdomain in the 'Udemy Business Org' field."
-    )
-    return "", {}, friendly, browser
+    token = merged.get("access_token", "")
+    if token:
+        return token, merged, None, browser
+
+    # Build a helpful diagnostic message
+    error_lines: list[str] = [f"No Udemy access_token found in {browser}."]
+    if errors:
+        error_lines.append("Backend errors:")
+        error_lines.extend(f"  • {e}" for e in errors)
+
+    error_lines += [
+        "",
+        "Troubleshooting:",
+        "• Close Edge completely — the cookie DB is locked while the browser is open.",
+        "• Make sure you are logged in to Udemy in Edge.",
+        "• For Udemy Business (yourorg.udemy.com): paste the full course URL",
+        "  (https://ingnepal.udemy.com/course/…) OR enter your org name",
+        "  (e.g.  ingnepal) in the 'Udemy Business Org' field.",
+    ]
+
+    return "", {}, "\n".join(error_lines), browser

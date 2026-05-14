@@ -200,25 +200,38 @@ def get_course_by_slug(
     """Return (course_id, course_title) for the given course slug.
 
     Tries in order:
-      1. Paginate /users/me/subscribed-courses/ matching published_title == slug.
-         This is the most reliable: no fuzziness, works for all enrolled courses.
-      2. Fetch the course HTML page and scrape the ID (last resort; often fails
-         on Udemy's current client-rendered frontend).
+      1. Paginate /users/me/subscribed-courses/ on *api_base* — the most
+         reliable method; works for both personal and business accounts.
+      2. Same as (1) but on www.udemy.com — catches the case where the user
+         entered a slug (no org URL) and their business token also works on
+         the standard Udemy API, or vice-versa.
+      3. Public /courses/ API on *api_base*.
+      4. Course HTML page scrape (last resort; often fails on Next.js).
 
     Raises ValueError with a clear message if all approaches fail.
     """
-    result = (
-        _try_subscribed_exact(session, slug, api_base)
-        or _try_courses_api_exact(session, slug, api_base)
-        or _try_html_page(session, slug)
-    )
+    api_bases_to_try = [api_base]
+    if api_base != UDEMY_API_BASE:
+        api_bases_to_try.append(UDEMY_API_BASE)
+
+    for base in api_bases_to_try:
+        result = (
+            _try_subscribed_exact(session, slug, base)
+            or _try_courses_api_exact(session, slug, base)
+        )
+        if result:
+            return result
+
+    result = _try_html_page(session, slug)
     if result:
         return result
 
     raise ValueError(
         f"Could not resolve course ID for: {slug!r}.\n"
-        "Make sure you are enrolled in the course, logged in to Udemy in your browser, "
-        "and that the URL is correct."
+        "Make sure you are enrolled in the course and logged in to Udemy in your browser.\n"
+        "For Udemy Business accounts: paste the full business URL "
+        "(e.g. https://ingnepal.udemy.com/course/…) or enter your org name "
+        "in the 'Udemy Business Org' field."
     )
 
 
