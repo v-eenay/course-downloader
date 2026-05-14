@@ -422,6 +422,51 @@ def _load_browser_cookies_from_locked_cookie(domain: str, browser: str):
     return fetch_locked_chromium_cookies(domain, cookie_file, loader, key_file=key_file)
 
 
+# yt-dlp browser name mapping  (yt-dlp knows edge/chrome/brave/vivaldi/opera/chromium)
+_YTDLP_BROWSER_MAP = {
+    "edge":     "edge",
+    "chrome":   "chrome",
+    "brave":    "brave",
+    "vivaldi":  "vivaldi",
+    "opera":    "opera",
+    "opera_gx": "opera",
+    "chromium": "chromium",
+}
+
+
+def _load_browser_cookies_from_ytdlp(domain: str, browser: str):
+    """Use yt-dlp's cookie extraction which handles Edge/Chrome 127+ APPB encryption.
+
+    yt-dlp decrypts app-bound cookies without requiring admin rights or closing
+    the browser.  It's tried *first* so that the APPB-capable path is preferred
+    over the older browser_cookie3 path that only supports DPAPI keys.
+    """
+    ytdlp_name = _YTDLP_BROWSER_MAP.get(browser)
+    if not ytdlp_name:
+        raise ValueError(f"yt-dlp cookie extraction not available for {browser}")
+
+    try:
+        from yt_dlp.cookies import extract_cookies_from_browser, YDLLogger
+    except ImportError as exc:
+        raise ImportError(f"yt-dlp is not installed: {exc}") from exc
+
+    class _SilentLogger(YDLLogger):
+        def warning(self, message): pass
+        def error(self, message): pass
+
+    jar = extract_cookies_from_browser(ytdlp_name, logger=_SilentLogger())
+
+    # Filter to the requested domain (yt-dlp returns ALL cookies for the browser)
+    matching = [
+        c for c in jar
+        if domain.lstrip(".") in c.domain or c.domain.lstrip(".") in domain.lstrip(".")
+    ]
+    # If domain is a broad term like "udemy" just return everything from any udemy host
+    if not matching and len(domain) <= 6:
+        matching = list(jar)
+    return matching if matching else list(jar)
+
+
 def load_browser_cookies(domain: str, browser: str):
     if browser not in ALLOWED_BROWSERS:
         raise ValueError(
@@ -431,6 +476,7 @@ def load_browser_cookies(domain: str, browser: str):
 
     backend_errors = []
     backends = [
+        ("yt-dlp", _load_browser_cookies_from_ytdlp),
         ("rookiepy", _load_browser_cookies_from_rookiepy),
         ("browser_cookie3", _load_browser_cookies_from_browser_cookie3),
     ]
@@ -453,8 +499,8 @@ def load_browser_cookies(domain: str, browser: str):
         try:
             return loader(domain, browser)
         except (ImportError, ModuleNotFoundError) as error:
-            if backend_name == 'rookiepy':
-                continue
+            if backend_name in ('rookiepy', 'yt-dlp'):
+                continue  # optional backends – skip silently if not installed
             backend_errors.append(f"{backend_name}: {error}")
         except Exception as error:
             backend_errors.append(f"{backend_name}: {error}")

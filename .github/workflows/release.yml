@@ -88,6 +88,7 @@ jobs:
             "--hidden-import", "PyQt5.QtXml",
             "--hidden-import", "browser_cookie3",
             "--hidden-import", "rookiepy",
+            "--collect-submodules", "yt_dlp",
             "--hidden-import", "keyring.backends.Windows",
             "--collect-submodules", "downloader_core",
             "--collect-submodules", "terminal_shell",
