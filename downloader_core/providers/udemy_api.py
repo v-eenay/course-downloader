@@ -238,11 +238,42 @@ def get_course_by_slug(
 def get_curriculum(
     session: requests.Session, course_id: int, api_base: str = UDEMY_API_BASE
 ) -> list:
-    """Return all curriculum items for *course_id* (chapters, lectures, quizzes)."""
-    url = (
-        f"{api_base}/courses/{course_id}/subscriber-curriculum-items/"
-        f"?page_size=1400&{_CURRICULUM_FIELDS}"
-    )
-    resp = session.get(url, timeout=60)
-    resp.raise_for_status()
-    return resp.json().get("results", [])
+    """Return all curriculum items for *course_id*, paginating as needed.
+
+    Fetches in pages of 100 items (Udemy's practical limit for this endpoint)
+    rather than requesting 1400 items at once.  Smaller pages time out far less
+    often, especially against Udemy Business org endpoints which can be slower
+    than www.udemy.com.  Each page is retried up to 3 times before giving up.
+    """
+    results: list = []
+    page = 1
+    page_size = 100
+    max_retries = 3
+
+    while True:
+        url = (
+            f"{api_base}/courses/{course_id}/subscriber-curriculum-items/"
+            f"?page={page}&page_size={page_size}&{_CURRICULUM_FIELDS}"
+        )
+        last_exc: Exception | None = None
+        for attempt in range(max_retries):
+            try:
+                resp = session.get(url, timeout=90)
+                resp.raise_for_status()
+                break
+            except requests.exceptions.Timeout as exc:
+                last_exc = exc
+            except requests.exceptions.RequestException:
+                raise
+        else:
+            raise last_exc  # all retries exhausted
+
+        data = resp.json()
+        batch = data.get("results", [])
+        results.extend(batch)
+
+        if not data.get("next"):
+            break
+        page += 1
+
+    return results
