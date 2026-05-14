@@ -434,19 +434,173 @@ _YTDLP_BROWSER_MAP = {
 }
 
 
-def _load_browser_cookies_from_ytdlp(domain: str, browser: str):
-    """Use yt-dlp's cookie extraction which handles Edge/Chrome 127+ APPB encryption.
+def _copy_cookie_db_via_vss(cookie_db_path: str) -> str:
+    """Copy a browser cookie database using a VSS shadow snapshot.
 
-    yt-dlp decrypts app-bound cookies without requiring admin rights or closing
-    the browser.  It's tried *first* so that the APPB-capable path is preferred
-    over the older browser_cookie3 path that only supports DPAPI keys.
+    When a Chromium browser is running it holds an OS-level exclusive file lock
+    on its ``Cookies`` SQLite database.  SQLite's ``immutable=1`` mode, shutil,
+    or any other normal file read will receive ``ERROR_SHARING_VIOLATION`` (32)
+    before the file handle is even opened.
+
+    The Windows Volume Shadow Copy Service (VSS) creates a point-in-time
+    read-only snapshot of the whole volume.  Reading from that snapshot is
+    completely independent of any file locks on the live volume, so the copy
+    succeeds even while Edge/Chrome is running.
+
+    **Requires admin (elevated) rights** — VSS snapshot creation is restricted
+    to administrators.  In our architecture this is called from
+    ``cookie_extractor_helper.py`` which already runs elevated via UAC.
+
+    Returns the path to a temporary ``*.db`` file that the caller owns and must
+    delete after use.  Raises ``RuntimeError`` if VSS is unavailable or the
+    copy fails.
+    """
+    import tempfile as _tempfile
+    import subprocess as _subprocess
+
+    abs_path = os.path.abspath(cookie_db_path)
+    drive_root = os.path.splitdrive(abs_path)[0] + os.sep   # e.g. "C:\"
+    rel_path = os.path.relpath(abs_path, drive_root)         # e.g. "Users\...\Cookies"
+
+    tmp_fd, tmp_path = _tempfile.mkstemp(suffix=".db", prefix="cookies_vss_")
+    os.close(tmp_fd)
+
+    # Write the PowerShell script to a temp file to avoid any inline quoting issues.
+    ps_script = (
+        "$ErrorActionPreference = 'Stop'\n"
+        f"$drive = '{drive_root}'\n"
+        # rel_path may contain single quotes (rare but possible); escape them.
+        f"$rel = '{rel_path.replace(chr(39), chr(39)*2)}'\n"
+        f"$dest = '{tmp_path.replace(chr(39), chr(39)*2)}'\n"
+        "$sc = $null\n"
+        "try {\n"
+        "    $r = (Get-WmiObject -List Win32_ShadowCopy).Create($drive, 'ClientAccessible')\n"
+        "    if ($r.ReturnValue -ne 0) { throw \"VSS create failed: $($r.ReturnValue)\" }\n"
+        "    $sc = Get-WmiObject Win32_ShadowCopy | Where-Object { $_.ID -eq $r.ShadowID }\n"
+        "    if ($null -eq $sc) { throw 'Shadow copy not found after creation' }\n"
+        "    $src = $sc.DeviceObject + '\\' + $rel\n"
+        "    Copy-Item -LiteralPath $src -Destination $dest -Force\n"
+        "} finally {\n"
+        "    if ($null -ne $sc) { $sc.Delete() | Out-Null }\n"
+        "}\n"
+    )
+
+    ps_fd, ps_path = _tempfile.mkstemp(suffix=".ps1", prefix="vss_")
+    try:
+        os.write(ps_fd, ps_script.encode("utf-8"))
+        os.close(ps_fd)
+
+        result = _subprocess.run(
+            [
+                "powershell",
+                "-NonInteractive", "-NoProfile",
+                "-ExecutionPolicy", "Bypass",
+                "-File", ps_path,
+            ],
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+    finally:
+        try:
+            os.unlink(ps_path)
+        except OSError:
+            pass
+
+    if result.returncode != 0 or not os.path.exists(tmp_path) or os.path.getsize(tmp_path) == 0:
+        try:
+            os.unlink(tmp_path)
+        except OSError:
+            pass
+        stderr = result.stderr.strip() if result.stderr else "(no stderr)"
+        raise RuntimeError(
+            f"VSS shadow-copy failed (rc={result.returncode}): {stderr}"
+        )
+
+    return tmp_path
+
+
+def _read_cookies_from_db(cookie_db_path: str, browser_dir: str, keyring_name: str,
+                          domain: str) -> list:
+    """Decrypt and return cookies from a local (unlocked) Chromium cookie database.
+
+    Uses yt-dlp's own decryptor so that the v10 AES-GCM cookies produced by
+    Chrome/Edge 107+ are handled correctly.
+    """
+    import sqlite3 as _sqlite3
+    from yt_dlp.cookies import get_cookie_decryptor, _process_chrome_cookie, YDLLogger
+
+    class _SilentLogger(YDLLogger):
+        def warning(self, message): pass
+        def error(self, message): pass
+
+    logger = _SilentLogger()
+
+    conn = _sqlite3.connect(cookie_db_path)
+    conn.text_factory = bytes
+    cursor = conn.cursor()
+    try:
+        try:
+            meta_version = int(
+                cursor.execute('SELECT value FROM meta WHERE key = "version"').fetchone()[0]
+            )
+        except Exception:
+            meta_version = 0
+
+        decryptor = get_cookie_decryptor(browser_dir, keyring_name, logger,
+                                         meta_version=meta_version)
+
+        col_info = cursor.execute("PRAGMA table_info(cookies)").fetchall()
+        col_names = [r[1].decode() if isinstance(r[1], bytes) else r[1] for r in col_info]
+        secure_col = "is_secure" if "is_secure" in col_names else "secure"
+
+        domain_filter = domain.lstrip(".")
+        cursor.execute(
+            f"SELECT host_key, name, value, encrypted_value, path, expires_utc, {secure_col} "
+            "FROM cookies WHERE host_key LIKE ?",
+            (f"%{domain_filter}%",),
+        )
+        results = []
+        for row in cursor.fetchall():
+            try:
+                _enc, cookie = _process_chrome_cookie(decryptor, *row)
+                if cookie:
+                    results.append(cookie)
+            except Exception:
+                pass
+    finally:
+        conn.close()
+
+    return results
+
+
+def _load_browser_cookies_from_ytdlp(domain: str, browser: str):
+    """Use yt-dlp's cookie extraction which handles Chrome/Edge v10 (AES-GCM) cookies.
+
+    Attempts three paths in order:
+
+    1. **Normal path** — yt-dlp copies the database to a temp directory and
+       decrypts it.  Works whenever the browser is closed.
+
+    2. **VSS shadow-copy path** — when the browser has the Cookies file locked
+       at the OS level (``ERROR_SHARING_VIOLATION``) the normal path fails.
+       This fallback creates a Windows VSS snapshot, copies the file from the
+       snapshot (lock-free), then decrypts normally.  Requires admin rights;
+       in practice it is called from the elevated ``cookie_extractor_helper``
+       process that is already running as admin.
+
+    3. If both paths fail the exception is re-raised so the caller can try the
+       next backend (e.g. rookiepy → browser_cookie3 → locked_cookie).
     """
     ytdlp_name = _YTDLP_BROWSER_MAP.get(browser)
     if not ytdlp_name:
         raise ValueError(f"yt-dlp cookie extraction not available for {browser}")
 
     try:
-        from yt_dlp.cookies import extract_cookies_from_browser, YDLLogger
+        from yt_dlp.cookies import (
+            extract_cookies_from_browser, YDLLogger,
+            _get_chromium_based_browser_settings, _find_files, _newest,
+        )
     except ImportError as exc:
         raise ImportError(f"yt-dlp is not installed: {exc}") from exc
 
@@ -454,17 +608,51 @@ def _load_browser_cookies_from_ytdlp(domain: str, browser: str):
         def warning(self, message): pass
         def error(self, message): pass
 
-    jar = extract_cookies_from_browser(ytdlp_name, logger=_SilentLogger())
+    logger = _SilentLogger()
 
-    # Filter to the requested domain (yt-dlp returns ALL cookies for the browser)
-    matching = [
-        c for c in jar
-        if domain.lstrip(".") in c.domain or c.domain.lstrip(".") in domain.lstrip(".")
-    ]
-    # If domain is a broad term like "udemy" just return everything from any udemy host
-    if not matching and len(domain) <= 6:
-        matching = list(jar)
-    return matching if matching else list(jar)
+    # ── 1. Normal path ────────────────────────────────────────────────────
+    normal_error: Exception | None = None
+    try:
+        jar = extract_cookies_from_browser(ytdlp_name, logger=logger)
+        matching = [
+            c for c in jar
+            if domain.lstrip(".") in c.domain or c.domain.lstrip(".") in domain.lstrip(".")
+        ]
+        if not matching and len(domain) <= 6:
+            matching = list(jar)
+        return matching if matching else list(jar)
+    except Exception as exc:
+        normal_error = exc
+
+    # ── 2. VSS shadow-copy path (Windows only, requires admin) ───────────
+    # Always attempt on Windows when the normal path fails — the most common
+    # cause is a file-locking conflict when the browser is open, but any
+    # access error might be fixable via a VSS snapshot.  If VSS itself is
+    # unavailable (no admin rights, VSS disabled) it raises RuntimeError
+    # immediately and we propagate the original error.
+    if sys.platform == "win32":
+        try:
+            config = _get_chromium_based_browser_settings(ytdlp_name)
+            browser_dir = config["browser_dir"]
+            cookie_db_path = _newest(_find_files(browser_dir, "Cookies", logger))
+            if cookie_db_path:
+                vss_copy = _copy_cookie_db_via_vss(cookie_db_path)
+                try:
+                    return _read_cookies_from_db(
+                        vss_copy, browser_dir, config["keyring_name"], domain
+                    )
+                finally:
+                    try:
+                        os.unlink(vss_copy)
+                    except OSError:
+                        pass
+        except Exception as vss_exc:
+            raise RuntimeError(
+                f"yt-dlp normal path failed ({normal_error}); "
+                f"VSS fallback also failed ({vss_exc})"
+            ) from vss_exc
+
+    raise RuntimeError(str(normal_error))
 
 
 def load_browser_cookies(domain: str, browser: str):
