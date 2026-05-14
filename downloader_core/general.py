@@ -437,7 +437,17 @@ def load_browser_cookies(domain: str, browser: str):
     if sys.platform == 'win32':
         backends.append(("windows_cookie_copy", _load_browser_cookies_from_windows_copy))
         if browser in WINDOWS_CHROMIUM_COOKIE_PATHS:
-            backends.append(("locked_cookie", _load_browser_cookies_from_locked_cookie))
+            # Skip locked_cookie (which uses RmShutdown to kill the browser process)
+            # when already running elevated — admin can read the cookie file directly
+            # via windows_cookie_copy without killing the browser.
+            _elevated = False
+            try:
+                import ctypes as _ctypes
+                _elevated = bool(_ctypes.windll.shell32.IsUserAnAdmin())
+            except Exception:
+                pass
+            if not _elevated:
+                backends.append(("locked_cookie", _load_browser_cookies_from_locked_cookie))
 
     for backend_name, loader in backends:
         try:

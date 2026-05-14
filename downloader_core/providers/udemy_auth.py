@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import sys
 
 import general
 
@@ -87,10 +88,10 @@ def load_udemy_auth(
 ) -> tuple[str, dict[str, str], str | None, str]:
     """Return (access_token, all_cookies_dict, error, source_browser).
 
-    Searches the specified *browser* across all Udemy domain variants and
-    returns as soon as an access_token is found.  No cross-browser fallback —
-    that previously caused wrong-account errors for users with both personal
-    and business Udemy accounts in different browsers.
+    Searches the specified *browser* across all Udemy domain variants.
+    On Windows, if cookie decryption fails due to Edge/Chrome 127+ app-bound
+    encryption, automatically prompts for UAC to run only the cookie-extraction
+    step elevated — the rest of the download continues at normal privilege.
     """
     logging.info("Loading Udemy cookies from %s (org domain: %s)…", browser, org_domain)
     merged, errors = _load_all_udemy_cookies(browser, org_domain)
@@ -99,9 +100,7 @@ def load_udemy_auth(
     if token:
         return token, merged, None, browser
 
-    # Detect whether the root cause is app-bound encryption requiring admin rights.
-    # Chrome/Edge 127+ encrypt the cookie key with a secret tied to the app identity;
-    # third-party readers need elevated privileges to decrypt it.
+    # Detect whether the root cause is app-bound encryption / missing admin rights.
     all_errors_text = " ".join(errors).lower()
     needs_admin = (
         "admin" in all_errors_text
@@ -109,6 +108,35 @@ def load_udemy_auth(
         or "app-bound" in all_errors_text
         or "elevation" in all_errors_text
     )
+
+    # ── Windows auto-elevation ────────────────────────────────────────────────
+    # Edge / Chrome 127+ encrypt the cookie key with app-bound encryption that
+    # requires elevated privileges to decrypt.  Rather than asking the user to
+    # restart the whole app as admin (which triggers Edge's session-reset
+    # protection), we spawn a tiny elevated helper process just for this step.
+    if sys.platform == "win32" and needs_admin:
+        try:
+            from downloader_core.win_elevate import is_admin, extract_cookies_elevated
+            if not is_admin():
+                logging.info(
+                    "Cookie decryption blocked by app-bound encryption; "
+                    "requesting admin access for cookie extraction only (UAC prompt)…"
+                )
+                elev_cookies, elev_errors, elev_fatal = extract_cookies_elevated(
+                    org_domain, browser
+                )
+                if elev_cookies:
+                    merged.update(elev_cookies)
+                    token = merged.get("access_token", "")
+                    if token:
+                        return token, merged, None, browser
+                # Elevation ran but still no token — collect the errors
+                if elev_fatal:
+                    errors.append(f"Elevated extraction: {elev_fatal}")
+                errors.extend(f"Elevated: {e}" for e in elev_errors)
+        except Exception as exc:
+            errors.append(f"Elevation attempt failed: {exc}")
+    # ─────────────────────────────────────────────────────────────────────────
 
     error_lines: list[str] = [f"No Udemy access_token found in {browser}."]
     if errors:
@@ -120,9 +148,11 @@ def load_udemy_auth(
 
     if needs_admin:
         error_lines += [
-            "★ Run the app as Administrator.",
-            "  Edge/Chrome 127+ use app-bound cookie encryption that requires",
-            "  elevated privileges to read. Right-click the app → 'Run as administrator'.",
+            "★ Edge/Chrome 127+ use app-bound cookie encryption.",
+            "  The app tried to request admin access automatically via UAC.",
+            "  If the UAC prompt appeared but failed, try:",
+            "  — Close Edge completely (including background processes),",
+            "    then click Download again to retry the UAC prompt.",
             "",
         ]
 

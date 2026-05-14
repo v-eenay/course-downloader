@@ -106,8 +106,16 @@ class UdemyProvider(CourseProvider):
         # 3) default udemy.com
         explicit_org = (args_dict.get("udemy_org") or "").strip().lower()
         if explicit_org:
-            # Normalise: allow "yourorg" or "yourorg.udemy.com"
-            if not explicit_org.endswith(".udemy.com") and explicit_org != "udemy.com":
+            # User may paste a full URL (e.g. https://yourorg.udemy.com/) — strip to hostname
+            if "://" in explicit_org:
+                from urllib.parse import urlparse as _urlparse
+                explicit_org = _urlparse(explicit_org).netloc or explicit_org
+            # Strip trailing slashes and www. prefix
+            explicit_org = explicit_org.strip("/").lstrip("www.")
+            # Normalise: allow "yourorg" (no dot) → "yourorg.udemy.com"
+            if "." not in explicit_org:
+                explicit_org = f"{explicit_org}.udemy.com"
+            elif not explicit_org.endswith(".udemy.com") and explicit_org != "udemy.com":
                 explicit_org = f"{explicit_org}.udemy.com"
             org_host = explicit_org
         else:
