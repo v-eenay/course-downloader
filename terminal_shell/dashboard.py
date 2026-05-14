@@ -240,6 +240,22 @@ class ConsoleDashboard(QMainWindow):
         action_layout.addWidget(self.download_button)
         options_layout.addWidget(action_box)
 
+        udemy_org_box = QGroupBox("Udemy Business Org (optional)")
+        udemy_org_layout = QVBoxLayout(udemy_org_box)
+        udemy_org_layout.setSpacing(6)
+        self.udemy_org_input = QLineEdit(self.preference_store.read('udemy_org') or '')
+        self.udemy_org_input.setPlaceholderText("e.g. ingnepal  (leave blank for personal accounts)")
+        udemy_org_layout.addWidget(self.udemy_org_input)
+        udemy_org_hint = QLabel(
+            "If your Udemy account is on a business portal (yourorg.udemy.com), "
+            "enter the org name here. Pasting the full business URL also works."
+        )
+        udemy_org_hint.setObjectName("SectionHint")
+        udemy_org_hint.setWordWrap(True)
+        udemy_org_layout.addWidget(udemy_org_hint)
+        options_layout.addWidget(udemy_org_box)
+        self.udemy_org_box = udemy_org_box
+
         self.browser_note = QLabel()
         self.browser_note.setObjectName("SectionHint")
         self.browser_note.setWordWrap(True)
@@ -308,6 +324,7 @@ class ConsoleDashboard(QMainWindow):
             self.folder_button,
             self.quality_select,
             self.subtitle_select,
+            self.udemy_org_input,
             self.resume_button,
             self.download_button,
         ]
@@ -401,6 +418,9 @@ class ConsoleDashboard(QMainWindow):
         self.specialization_toggle.setText(ui_spec.mode_toggle_text)
         if not ui_spec.show_mode_toggle:
             self.specialization_toggle.setChecked(False)
+
+        provider = self._current_provider()
+        self.udemy_org_box.setVisible(provider.key == 'udemy')
 
     def _show_message_box(self, title, text, icon):
         dialog = QMessageBox(self)
@@ -518,6 +538,12 @@ class ConsoleDashboard(QMainWindow):
             # name with --cauth-auto so args.browser is set in the downloader core.
             arguments += ['--cauth-auto', browser]
             runtime_options.pop('ca', None)  # never include -ca for non-Coursera
+
+        if provider.key == 'udemy':
+            udemy_org = self.udemy_org_input.text().strip()
+            self.preference_store.update('udemy_org', udemy_org)
+            if udemy_org:
+                arguments += ['--udemy-org', udemy_org]
 
         runtime_options = general.move_to_first(runtime_options, 'ca')
         for option, value in runtime_options.items():

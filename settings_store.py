@@ -13,6 +13,7 @@ class SettingsStore:
         return {
             'browser': 'edge',
             'provider': 'coursera',
+            'udemy_org': '',
             'udemy_quality_policy': 'exact_or_lower',
             'udemy_include_captions': False,
             'udemy_include_supplemental': False,

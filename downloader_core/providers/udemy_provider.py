@@ -101,10 +101,20 @@ class UdemyProvider(CourseProvider):
         resolution = args_dict.get("video_resolution") or "best"
         slug = parsed_target.slug_or_id
 
-        # Detect Udemy Business org subdomain (e.g. ingnepal.udemy.com)
-        raw_url = parsed_target.raw_value if parsed_target.is_url else None
-        org_host = _org_host_from_url(raw_url)          # e.g. "ingnepal.udemy.com"
-        org_domain = org_host.lstrip("www.")            # e.g. "ingnepal.udemy.com" / "udemy.com"
+        # ── Org / Business domain detection ──────────────────────────────
+        # Priority: 1) explicit --udemy-org arg, 2) org host extracted from URL,
+        # 3) default udemy.com
+        explicit_org = (args_dict.get("udemy_org") or "").strip().lower()
+        if explicit_org:
+            # Normalise: allow "ingnepal" or "ingnepal.udemy.com"
+            if not explicit_org.endswith(".udemy.com") and explicit_org != "udemy.com":
+                explicit_org = f"{explicit_org}.udemy.com"
+            org_host = explicit_org
+        else:
+            raw_url = parsed_target.raw_value if parsed_target.is_url else None
+            org_host = _org_host_from_url(raw_url)   # e.g. "ingnepal.udemy.com"
+
+        org_domain = org_host.lstrip("www.")          # e.g. "ingnepal.udemy.com"
         api_base = f"https://{org_host}/api-2.0"
 
         # ── Authentication ────────────────────────────────────────────────

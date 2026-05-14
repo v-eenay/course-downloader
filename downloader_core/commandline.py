@@ -374,6 +374,18 @@ def parse_args(args=None):
         help='Load CAUTH cookie from a supported browser')
 
     group_adv_auth.add_argument(
+        '--udemy-org',
+        dest='udemy_org',
+        action='store',
+        default=None,
+        metavar="ORG",
+        help=(
+            'Udemy Business org subdomain (e.g. "ingnepal" or "ingnepal.udemy.com"). '
+            'Use this when your Udemy account is on a business portal. '
+            'If you paste the full business URL the app detects this automatically.'
+        ))
+
+    group_adv_auth.add_argument(
         '-c',
         '--cookies_file',
         dest='cookies_file',
